@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from flax import nnx
-from dqn.models.mlp import MLP
+from dqn.networks.mlp import MLP
 
 def test_mlp_out_shape():
     x = jnp.ones((12,))

@@ -8,7 +8,7 @@ from flax import nnx
 
 import pytest
 
-from dqn.models.networks import DiscretePolicy, sample_action
+from dqn.networks.networks import DiscretePolicy, sample_action
 
 def test_policy_network_action_space():
     a = spaces.Discrete(6)
