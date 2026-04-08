@@ -21,9 +21,10 @@ def test_policy_network_action_space():
     logits = policy(o.sample())
     assert logits.shape == (6,)
     
-def test_policy_network_action_space():
-    
-    rngs = nnx.Rngs(0)
+def test_policy_network_action_sample():
+    rngs = nnx.Rngs(1)
     logits = jnp.array([0.1, 0.1, 0.8])
-   
-    assert logits.shape == (6,)
+    keys=rngs()
+    action = sample_action(logits, key=keys)
+    assert action == 2
+    
