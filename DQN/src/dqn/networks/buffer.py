@@ -16,6 +16,7 @@ class ReplayBuffer:
     rewards: jax.Array
     dones: jax.Array
     write_idx: jax.Array
+    size: jax.Array
     capacity: int = struct.field(pytree_node=False) # metadata
     
 @struct.dataclass
@@ -39,6 +40,7 @@ def create_replay_buffer(
         dones=jnp.zeros(shape=(capacity,)),
         capacity=capacity,
         write_idx=0,
+        size=0
     )
 
 def add_transition(buffer: ReplayBuffer, 
@@ -56,6 +58,7 @@ def add_transition(buffer: ReplayBuffer,
         rewards=buffer.rewards.at[idx].set(reward),
         dones=buffer.dones.at[idx].set(done),
         write_idx=buffer.write_idx + 1,
+        size=buffer.size+1,
         capacity=buffer.capacity,
     )
     
@@ -64,7 +67,7 @@ def sample_batch(
     key: jax.Array,
     batch_size: int
 ) -> Batch:
-    idx = jax.random.randint(key, shape=(batch_size,), minval=0, maxval=batch_size)
+    idx = jax.random.randint(key, shape=(batch_size,), minval=0, maxval=buffer.size)
     return Batch(
         states=buffer.states[idx],
         actions=buffer.actions[idx],
