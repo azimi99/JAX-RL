@@ -59,7 +59,6 @@ def add_transition(buffer: ReplayBuffer,
         capacity=buffer.capacity,
     )
     
-
 def sample_batch(
     buffer: ReplayBuffer,
     key: jax.Array,

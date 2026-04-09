@@ -9,10 +9,9 @@ from dqn.networks.mlp import MLP
 
 from gymnasium import spaces
 
-from typeguard import typechecked
+
 
 class QNetwork(nnx.Module):
-    @typechecked
     def __init__(self,
                  obs_dim: int,
                  action_dim: int,
