@@ -12,7 +12,7 @@ from dqn.networks.buffer import Batch
 def loss_fn(q_net: nnx.Module,
             target_q_net: nnx.Module, 
             batch: Batch,
-            gamma: float) -> jax.Array:
+            gamma: float):
     states = batch.states # (B, S)
     actions = batch.actions # (B, 1), action is a single integer
     #Expand dimensions to prevent (B,) and (B, 1) broadcasting to (B, B)
@@ -29,7 +29,8 @@ def loss_fn(q_net: nnx.Module,
     loss = jnp.where(jnp.abs(td_error) <= 1.0, 
                      (0.5 * td_error ** 2), 
                      jnp.abs(td_error) - 0.5)
-    return jnp.mean(loss)
+    
+    return jnp.mean(loss * batch.weights), td_error
     
     
 
@@ -40,7 +41,7 @@ def train_step(q_net: nnx.Module,
                batch: Batch,
                gamma: float,
                tau: float) -> jax.Array:
-    loss, grads = nnx.value_and_grad(loss_fn, argnums=0)(q_net, 
+    (loss, td_error), grads = nnx.value_and_grad(loss_fn, argnums=0, has_aux=True)(q_net, 
                                               target_q_net, 
                                               batch, 
                                               gamma)
@@ -61,7 +62,7 @@ def train_step(q_net: nnx.Module,
     )
     nnx.update(target_q_net, new_target_params)
     
-    return loss
+    return loss, td_error
 
 
     

@@ -77,7 +77,7 @@ def main() -> None:
     ## setup environment
     num_timesteps = 500_000
     env = gym.make(args.env, render_mode=args.render_mode)
-    env = wrap_env(env, logs_folder=args.logs, num_timesteps=num_timesteps)
+    env = wrap_env(env, logs_folder=args.logs)
     
     ## setup algorithm
     rngs = nnx.Rngs(0)

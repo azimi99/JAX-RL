@@ -1,0 +1,220 @@
+# environment
+import gymnasium as gym
+from gymnasium.vector import SyncVectorEnv
+
+# jax imports
+import numpy as np
+import jax 
+import jax.numpy as jnp
+from flax import nnx
+import optax
+
+# basic imports
+import argparse
+import types
+import logging
+
+# algorithm imports
+from utils import wrap_env
+from dqn.networks.networks import QNetwork
+from dqn.networks.buffer \
+    import create_replay_buffer,\
+        add_transition_batch,\
+        sample_batch, update_priorities
+from dqn.train.train import train_step
+
+# wandb
+import wandb
+
+def args_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog = "DQN implementation")
+    # algorithm
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--time_steps', type=int, default=100_000)
+    parser.add_argument('--buffer_size', type=int, default=10_000)
+    parser.add_argument('--num_envs', type=int, default=3)
+    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--tau', type=float, default=0.01)
+    parser.add_argument('--epsilon', type=float, default=0.1)
+    parser.add_argument('--lr', type=float, default=3e-4)
+    
+    
+    # environment config
+    parser.add_argument('--env', type=str, default="CartPole-v1")
+    parser.add_argument('--render_mode', type=str, default="rgb_array")
+    
+    # logging
+    parser.add_argument('--logs', type=str, default="./logs")
+    
+    return parser
+
+def make_env(args, i):
+    def thunk():
+        env = gym.make(args.env, render_mode=args.render_mode)
+        if i == 0:  # only wrap env 0
+            env = wrap_env(
+                env,
+                logs_folder=args.logs
+            )
+        return env
+    return thunk
+
+@nnx.jit
+def sample_action(
+    q_net: nnx.Module,
+    state: jax.Array,   # (num_envs, state_dim)
+    key: jax.Array,
+    epsilon: float,
+) -> jax.Array:
+    q_vals = q_net(state)  # (num_envs, action_dim)
+
+    key_eps, key_act = jax.random.split(key)
+
+    greedy_action = jnp.argmax(q_vals, axis=-1)  # (num_envs,)
+    eps_sample = jax.random.uniform(key_eps, shape=(state.shape[0],))
+    random_action = jax.random.randint(
+        key_act,
+        shape=(state.shape[0],),
+        minval=0,
+        maxval=q_vals.shape[-1],
+    )
+
+    return jnp.where(eps_sample > epsilon, greedy_action, random_action)
+
+def main() -> None:
+    # Setup training 
+    args = args_parser().parse_args()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.StreamHandler(), # Outputs to terminal
+            logging.FileHandler(f"{args.logs}/training.log") # Outputs to file
+        ]
+    )  
+    wandb.init(
+        project="rl jax",
+        config={
+            "learning_rate": 1e-3,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "batch_size": 256  
+        },   
+    )
+    ## setup environment
+    num_timesteps = args.time_steps
+    num_envs = args.num_envs
+    env = SyncVectorEnv([make_env(args, i) for i in range(num_envs)])
+    
+    
+    ## setup algorithm
+    rngs = nnx.Rngs(args.seed)
+    
+    # q_networks
+    q_net = QNetwork(
+        obs_dim=env.single_observation_space.shape[0],
+        action_dim=env.single_action_space.n,
+        hidden_dims=(256,256),
+        rngs=rngs
+    )
+    
+    target_q_net = QNetwork(
+        obs_dim=env.single_observation_space.shape[0],
+        action_dim=env.single_action_space.n,
+        hidden_dims=(256,256),
+        rngs=rngs
+    )
+    
+    # Sync target network weights initially
+    nnx.update(target_q_net, nnx.state(q_net, nnx.Param))
+    lr_schedule = optax.linear_schedule(
+        init_value=args.lr,
+        end_value=1e-4,
+        transition_steps=10000
+    )
+    tx = optax.adam(learning_rate=lr_schedule)
+    optimizer = nnx.Optimizer(q_net, tx=tx)
+    buffer = create_replay_buffer(
+        capacity=args.buffer_size,
+        state_dim=env.single_observation_space.shape,
+        action_dim=(1,),  # discrete actions should be scalar       
+    )
+    logging.info("Allocated replay buffer")
+    
+    epsilon_schedule = optax.linear_schedule(
+        init_value=1.0,
+        end_value=args.epsilon,
+        transition_steps=50_000
+    )
+    
+    batch_size = args.batch_size
+    obs, info = env.reset(seed=args.seed)
+    done = False
+    episode_reward = 0
+    
+    for step in range(0, num_timesteps, num_envs):
+        key = rngs()
+        action = np.array(sample_action(
+            q_net=q_net,
+            state=obs,
+            key=key,
+            epsilon=epsilon_schedule(step)
+        ))
+        
+        next_obs, reward, terminated, truncated, info \
+            = env.step(action)
+
+        done = terminated | truncated  
+        buffer = add_transition_batch(
+            buffer=buffer, 
+            state=obs,
+            action=action,
+            next_state=next_obs,
+            reward=reward,
+            done=terminated,
+            num_envs=num_envs
+        )
+        episode_reward += np.mean(reward)
+        
+        if buffer.size >= batch_size:
+            key = rngs()   
+            batch = sample_batch(
+                buffer=buffer,
+                key=key,
+                batch_size=batch_size,
+                alpha=0.6
+            )
+            
+            loss, td_error = train_step(
+                q_net=q_net,
+                target_q_net=target_q_net,
+                optimizer=optimizer,
+                batch=batch,
+                gamma=args.gamma,
+                tau=args.tau
+            )
+            buffer = update_priorities(
+                buffer=buffer,
+                indices=batch.indices,
+                td_errors=td_error # (batch,)
+            )
+            
+            if step % 100 == 0:
+                wandb.log({
+                    "train/loss": loss,
+                    "env/episode_reward": episode_reward,
+                    "step": step
+                })
+    
+        obs = next_obs
+        if done.any():
+            done = False,
+            obs, info = env.reset()
+            episode_reward = 0 
+             
+    # cleanup
+    env.close() 
+    
+if __name__ == "__main__":
+    main()
