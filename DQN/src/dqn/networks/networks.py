@@ -21,6 +21,7 @@ class QNetwork(nnx.Module):
             in_dim=obs_dim,
             out_dim=action_dim,
             hidden_dims=hidden_dims,
+            activation_fn=nnx.tanh,
             rngs=rngs
         )
     def __call__(self, obs: jax.Array) -> jax.Array:

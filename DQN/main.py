@@ -161,12 +161,12 @@ def main() -> None:
                 gamma=0.99,
                 tau=0.001
             )
-                
-            wandb.log({
-                "train/loss": loss,
-                "env/episode_reward": episode_reward,
-                "env/step": step
-            })
+            if step % 10_000 == 0:  
+                wandb.log({
+                    "train/loss": loss,
+                    "env/episode_reward": episode_reward,
+                    "step": step
+                })
             
         obs = next_obs
         if done:
