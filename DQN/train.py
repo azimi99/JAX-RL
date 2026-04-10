@@ -14,6 +14,7 @@ import orbax.checkpoint as ocp
 import argparse
 import types
 import logging
+import os
 
 # algorithm imports
 from utils import wrap_env
@@ -26,6 +27,7 @@ from dqn.train.train import train_step
 
 # wandb
 import wandb
+
 
 def args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog = "DQN implementation")
@@ -90,7 +92,8 @@ def sample_action(
 def main() -> None:
     # Setup training 
     args = args_parser().parse_args()
-    ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{args.logs}/checkpoints')
+    os.makedirs(args.logs, exist_ok=True)
+    ckpt_dir = ocp.test_utils.erase_and_create_empty(os.path.abspath(f'{args.logs}/checkpoints'))
     video_dir = ocp.test_utils.erase_and_create_empty(f'{args.logs}/videos')
     checkpointer = ocp.StandardCheckpointer()
     
