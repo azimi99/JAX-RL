@@ -20,7 +20,7 @@ from dqn.networks.networks import QNetwork
 from dqn.networks.buffer \
     import create_replay_buffer,\
         add_transition_batch,\
-        sample_batch, update_priorities
+        sample_batch
 from dqn.train.train import train_step
 
 # wandb
@@ -30,14 +30,17 @@ def args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog = "DQN implementation")
     # algorithm
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--time_steps', type=int, default=100_000)
-    parser.add_argument('--buffer_size', type=int, default=10_000)
-    parser.add_argument('--num_envs', type=int, default=3)
-    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--time_steps', type=int, default=500_000)
+    parser.add_argument('--buffer_size', type=int, default=100_000)
+    parser.add_argument('--num_envs', type=int, default=6)
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--tau', type=float, default=0.01)
     parser.add_argument('--epsilon', type=float, default=0.1)
-    parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument('--lr', type=float, default=3e-3)
+    
+    # neural net
+    parser.add_argument('--hidden_dim', type=int, default=256)
     
     
     # environment config
@@ -95,12 +98,7 @@ def main() -> None:
     )  
     wandb.init(
         project="rl jax",
-        config={
-            "learning_rate": 1e-3,
-            "gamma": 0.99,
-            "tau": 0.005,
-            "batch_size": 256  
-        },   
+        config=vars(args),   
     )
     ## setup environment
     num_timesteps = args.time_steps
@@ -115,14 +113,14 @@ def main() -> None:
     q_net = QNetwork(
         obs_dim=env.single_observation_space.shape[0],
         action_dim=env.single_action_space.n,
-        hidden_dims=(256,256),
+        hidden_dims=(args.hidden_dim, args.hidden_dim),
         rngs=rngs
     )
     
     target_q_net = QNetwork(
         obs_dim=env.single_observation_space.shape[0],
         action_dim=env.single_action_space.n,
-        hidden_dims=(256,256),
+        hidden_dims=(args.hidden_dim, args.hidden_dim),
         rngs=rngs
     )
     
@@ -182,22 +180,16 @@ def main() -> None:
             batch = sample_batch(
                 buffer=buffer,
                 key=key,
-                batch_size=batch_size,
-                alpha=0.6
+                batch_size=batch_size
             )
             
-            loss, td_error = train_step(
+            loss = train_step(
                 q_net=q_net,
                 target_q_net=target_q_net,
                 optimizer=optimizer,
                 batch=batch,
                 gamma=args.gamma,
                 tau=args.tau
-            )
-            buffer = update_priorities(
-                buffer=buffer,
-                indices=batch.indices,
-                td_errors=td_error # (batch,)
             )
             
             if step % 100 == 0:

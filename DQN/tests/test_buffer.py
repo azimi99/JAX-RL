@@ -42,7 +42,15 @@ def test_add_transition(buffer_setup):
 
 def test_sample_batch(buffer_setup):
     buffer, obs_space, action_space = buffer_setup
-    
+    for _ in range(50):
+        buffer = add_transition(
+            buffer,
+            state=obs_space.sample(),
+            action=action_space.sample(),
+            next_state=obs_space.sample(),
+            reward=1.0,
+            done=0.0
+        )
     batch = sample_batch(
         buffer=buffer,
         key=jax.random.PRNGKey(0),

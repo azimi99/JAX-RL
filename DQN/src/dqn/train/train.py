@@ -30,7 +30,7 @@ def loss_fn(q_net: nnx.Module,
                      (0.5 * td_error ** 2), 
                      jnp.abs(td_error) - 0.5)
     
-    return jnp.mean(loss * batch.weights), td_error
+    return jnp.mean(loss)
     
     
 
@@ -41,7 +41,7 @@ def train_step(q_net: nnx.Module,
                batch: Batch,
                gamma: float,
                tau: float) -> jax.Array:
-    (loss, td_error), grads = nnx.value_and_grad(loss_fn, argnums=0, has_aux=True)(q_net, 
+    loss, grads = nnx.value_and_grad(loss_fn, argnums=0, has_aux=False)(q_net, 
                                               target_q_net, 
                                               batch, 
                                               gamma)
@@ -62,7 +62,7 @@ def train_step(q_net: nnx.Module,
     )
     nnx.update(target_q_net, new_target_params)
     
-    return loss, td_error
+    return loss
 
 
     
