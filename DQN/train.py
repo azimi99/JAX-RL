@@ -62,7 +62,7 @@ def make_env(args, i):
         if i == 0:  # only wrap env 0
             env = wrap_env(
                 env,
-                logs_folder=args.logs
+                logs_folder=f'{args.logs}/{args.env}/{args.seed}/videos'
             )
         return env
     return thunk
