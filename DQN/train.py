@@ -34,7 +34,7 @@ def args_parser() -> argparse.ArgumentParser:
     # algorithm
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--time_steps', type=int, default=1000_000)
-    parser.add_argument('--buffer_size', type=int, default=100_000)
+    parser.add_argument('--buffer_size', type=int, default=1000_000)
     parser.add_argument('--num_envs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--gamma', type=float, default=0.99)
