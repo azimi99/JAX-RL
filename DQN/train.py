@@ -39,7 +39,7 @@ def args_parser() -> argparse.ArgumentParser:
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--tau', type=float, default=0.00)
-    parser.add_argument('--epsilon', type=float, default=0.001)
+    parser.add_argument('--epsilon', type=float, default=0.05)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--start_learning', type=int, default=10_000)
     
