@@ -1,6 +1,6 @@
 # environment
 import gymnasium as gym
-from gymnasium.wrappers import RecordVideo
+from gymnasium.vector import SyncVectorEnv
 
 # jax imports
 import numpy as np
@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 import optax
+import orbax.checkpoint as ocp
 
 # basic imports
 import argparse
@@ -18,7 +19,9 @@ import logging
 from utils import wrap_env
 from dqn.networks.networks import QNetwork
 from dqn.networks.buffer \
-    import create_replay_buffer, add_transition, sample_batch
+    import create_replay_buffer,\
+        add_transition_batch,\
+        sample_batch
 from dqn.train.train import train_step
 
 # wandb
@@ -26,7 +29,21 @@ import wandb
 
 def args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog = "DQN implementation")
-    # seed
+    # algorithm
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--time_steps', type=int, default=1000_000)
+    parser.add_argument('--buffer_size', type=int, default=100_000)
+    parser.add_argument('--num_envs', type=int, default=5)
+    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--tau', type=float, default=0.00)
+    parser.add_argument('--epsilon', type=float, default=0.001)
+    parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument('--start_learning', type=int, default=10_000)
+    
+    # neural net
+    parser.add_argument('--hidden_dim', type=int, default=256)
+    
     
     # environment config
     parser.add_argument('--env', type=str, default="CartPole-v1")
@@ -37,25 +54,46 @@ def args_parser() -> argparse.ArgumentParser:
     
     return parser
 
+def make_env(args, i):
+    def thunk():
+        env = gym.make(args.env, render_mode=args.render_mode)
+        if i == 0:  # only wrap env 0
+            env = wrap_env(
+                env,
+                logs_folder=args.logs
+            )
+        return env
+    return thunk
 
-def sample_action( 
-                  q_net: nnx.Module, 
-                  state: jax.Array, 
-                  key: jax.random.PRNGKey,
-                  epsilon: float
-                  ) -> int:
-    q_vals = q_net(state)
-    eps_sample = jax.random.uniform(key=key)
-    
-    greedy_action = jnp.argmax(q_vals)
-    random_action = jax.random.randint(key, shape=(), minval=0, maxval=q_vals.shape[-1])
-    
-    # Use jnp.where instead of standard if/else
-    return int(jnp.where(eps_sample > epsilon, greedy_action, random_action))
+@nnx.jit
+def sample_action(
+    q_net: nnx.Module,
+    state: jax.Array,   # (num_envs, state_dim)
+    key: jax.Array,
+    epsilon: float,
+) -> jax.Array:
+    q_vals = q_net(state)  # (num_envs, action_dim)
+
+    key_eps, key_act = jax.random.split(key)
+
+    greedy_action = jnp.argmax(q_vals, axis=-1)  # (num_envs,)
+    eps_sample = jax.random.uniform(key_eps, shape=(state.shape[0],))
+    random_action = jax.random.randint(
+        key_act,
+        shape=(state.shape[0],),
+        minval=0,
+        maxval=q_vals.shape[-1],
+    )
+
+    return jnp.where(eps_sample > epsilon, greedy_action, random_action)
 
 def main() -> None:
     # Setup training 
     args = args_parser().parse_args()
+    ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{args.logs}/checkpoints')
+    video_dir = ocp.test_utils.erase_and_create_empty(f'{args.logs}/videos')
+    checkpointer = ocp.StandardCheckpointer()
+    
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -66,116 +104,123 @@ def main() -> None:
     )  
     wandb.init(
         project="rl jax",
-        config={
-            "learning_rate": 1e-3,
-            "gamma": 0.99,
-            "tau": 0.005,
-            "batch_size": 256  
-        },
-        
+        config=vars(args),   
     )
     ## setup environment
-    num_timesteps = 500_000
-    env = gym.make(args.env, render_mode=args.render_mode)
-    env = wrap_env(env, logs_folder=args.logs)
+    num_timesteps = args.time_steps
+    num_envs = args.num_envs
+    env = SyncVectorEnv([make_env(args, i) for i in range(num_envs)])
+    
     
     ## setup algorithm
-    rngs = nnx.Rngs(0)
+    rngs = nnx.Rngs(args.seed)
     
     # q_networks
     q_net = QNetwork(
-        obs_dim=env.observation_space.shape[-1],
-        action_dim=env.action_space.n,
-        hidden_dims=(256,256),
+        obs_dim=env.single_observation_space.shape[0],
+        action_dim=env.single_action_space.n,
+        hidden_dims=(args.hidden_dim, args.hidden_dim),
         rngs=rngs
     )
     
     target_q_net = QNetwork(
-        obs_dim=env.observation_space.shape[-1],
-        action_dim=env.action_space.n,
-        hidden_dims=(256,256),
+        obs_dim=env.single_observation_space.shape[0],
+        action_dim=env.single_action_space.n,
+        hidden_dims=(args.hidden_dim, args.hidden_dim),
         rngs=rngs
     )
     
     # Sync target network weights initially
     nnx.update(target_q_net, nnx.state(q_net, nnx.Param))
+    optax.clip_by_global_norm(10.0)
+    
     lr_schedule = optax.linear_schedule(
-        init_value=3e-4,
+        init_value=args.lr,
         end_value=1e-4,
         transition_steps=10000
     )
     tx = optax.adam(learning_rate=lr_schedule)
     optimizer = nnx.Optimizer(q_net, tx=tx)
     buffer = create_replay_buffer(
-        capacity=100000,
-        state_dim=env.observation_space.shape,
-        action_dim=(1,),        
+        capacity=args.buffer_size,
+        state_dim=env.single_observation_space.shape,
+        action_dim=(1,),  # discrete actions should be scalar       
     )
     logging.info("Allocated replay buffer")
     
     epsilon_schedule = optax.linear_schedule(
         init_value=1.0,
-        end_value=0.05,
-        transition_steps=10000
+        end_value=args.epsilon,
+        transition_steps=20_000
     )
     
-    batch_size = 512
-    obs, info = env.reset()
+    batch_size = args.batch_size
+    obs, info = env.reset(seed=args.seed)
     done = False
     episode_reward = 0
     
-    for step in range(num_timesteps):
+    for step in range(0, num_timesteps, num_envs):
         key = rngs()
-        action = sample_action(
+        action = np.array(sample_action(
             q_net=q_net,
             state=obs,
             key=key,
             epsilon=epsilon_schedule(step)
-        )
+        ))
         
-        next_obs, reward, terminated, truncated, info = env.step(action)
+        next_obs, reward, terminated, truncated, info \
+            = env.step(action)
 
         done = terminated | truncated  
-        buffer = add_transition(
+        buffer = add_transition_batch(
             buffer=buffer, 
             state=obs,
             action=action,
             next_state=next_obs,
             reward=reward,
-            done=terminated
+            done=terminated,
+            num_envs=num_envs
         )
-        episode_reward += reward
-        if buffer.size >= batch_size:
-            # start updates after
-            key = rngs()
+        episode_reward += np.mean(reward)
+        
+        if buffer.size >= batch_size and step >= args.start_learning:
+            key = rngs()   
             batch = sample_batch(
                 buffer=buffer,
                 key=key,
-                batch_size=batch_size,
+                batch_size=batch_size
             )
+            
             loss = train_step(
                 q_net=q_net,
                 target_q_net=target_q_net,
                 optimizer=optimizer,
                 batch=batch,
-                gamma=0.99,
-                tau=0.001
+                gamma=args.gamma,
+                tau=args.tau
             )
-            if step % 10_000 == 0:  
+            q_params = nnx.state(q_net, nnx.Param)
+            if (step // num_envs) % 1000 == 0:
+                nnx.update(target_q_net, q_params)
+                
+                checkpointer.save(ckpt_dir / f'state-{step}', q_params)
+            
+            if step % (args.num_envs * 100) == 0:
                 wandb.log({
                     "train/loss": loss,
                     "env/episode_reward": episode_reward,
-                    "step": step
+                    "env_step": step
                 })
-            
+    
         obs = next_obs
-        if done:
+        if done.any():
             done = False,
             obs, info = env.reset()
             episode_reward = 0 
              
     # cleanup
     env.close() 
+    wandb.finish()
     
 if __name__ == "__main__":
     main()
