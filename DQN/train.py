@@ -92,9 +92,9 @@ def sample_action(
 def main() -> None:
     # Setup training 
     args = args_parser().parse_args()
-    os.makedirs(args.logs, exist_ok=True)
-    ckpt_dir = ocp.test_utils.erase_and_create_empty(os.path.abspath(f'{args.logs}/checkpoints'))
-    video_dir = ocp.test_utils.erase_and_create_empty(f'{args.logs}/videos')
+    os.makedirs(f"{args.logs}/{args.env}/{args.seed}", exist_ok=True)
+    ckpt_dir = ocp.test_utils.erase_and_create_empty(os.path.abspath(f'{args.logs}/{args.env}/{args.seed}/checkpoints'))
+    video_dir = ocp.test_utils.erase_and_create_empty(os.path.abspath(f'{args.logs}/{args.env}/{args.seed}/videos'))
     checkpointer = ocp.StandardCheckpointer()
     
     logging.basicConfig(
@@ -102,7 +102,7 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.StreamHandler(), # Outputs to terminal
-            logging.FileHandler(f"{args.logs}/training.log") # Outputs to file
+            logging.FileHandler(f"{args.logs}/{args.env}/{args.seed}/training.log") # Outputs to file
         ]
     )  
     wandb.init(
