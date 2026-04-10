@@ -220,6 +220,7 @@ def main() -> None:
             done = False,
             obs, info = env.reset()
             episode_reward = 0 
+    wandb.log({"videos": wandb.Video(os.path.join(video_dir, sorted(os.listdir(video_dir))[-1]), caption="final_episode")})
              
     # cleanup
     env.close() 
