@@ -143,14 +143,17 @@ def main() -> None:
     
     # Sync target network weights initially
     nnx.update(target_q_net, nnx.state(q_net, nnx.Param))
-    optax.clip_by_global_norm(10.0)
+    
     
     lr_schedule = optax.linear_schedule(
         init_value=args.lr,
         end_value=1e-4,
         transition_steps=10000
     )
-    tx = optax.adam(learning_rate=lr_schedule)
+    tx = optax.chain(
+        optax.clip_by_global_norm(10.0),
+        optax.adam(learning_rate=lr_schedule)
+    )
     optimizer = nnx.Optimizer(q_net, tx=tx)
     buffer = create_replay_buffer(
         capacity=args.buffer_size,
@@ -162,13 +165,13 @@ def main() -> None:
     epsilon_schedule = optax.linear_schedule(
         init_value=1.0,
         end_value=args.epsilon,
-        transition_steps=20_000
+        transition_steps=50_000
     )
     
     batch_size = args.batch_size
     obs, info = env.reset(seed=args.seed)
     done = False
-    episode_reward = 0
+    episode_reward = np.zeros(num_envs, dtype=np.float32)
     
     for step in range(0, num_timesteps, num_envs):
         key = rngs()
@@ -195,7 +198,8 @@ def main() -> None:
         episode_reward += np.mean(reward)
         
         if buffer.size >= batch_size and step >= args.start_learning:
-            key = rngs()   
+            key = rngs()
+               
             batch = sample_batch(
                 buffer=buffer,
                 key=key,
@@ -225,9 +229,13 @@ def main() -> None:
     
         obs = next_obs
         if done.any():
-            done = False,
-            obs, info = env.reset()
-            episode_reward = 0 
+            finished = np.where(done)[0]
+            for i in finished:
+                wandb.log({
+                    "env/episode_reward": float(episode_reward[i]),
+                    "env_step": step,
+                })
+                episode_reward[i] = 0.0  # reset only that env’s tracker
     wandb.log({"videos": wandb.Video(os.path.join(video_dir, sorted(os.listdir(video_dir))[-1]), caption="final_episode")})
              
     # cleanup
