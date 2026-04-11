@@ -52,7 +52,7 @@ def args_parser() -> argparse.ArgumentParser:
     parser.add_argument('--env', type=str, default="CartPole-v1")
     parser.add_argument('--render_mode', type=str, default="rgb_array")
     parser.add_argument('--normalize_reward', type=bool, default=False)
-    parser.add_argument('--normalize_observatio', type=bool, default=False)
+    parser.add_argument('--normalize_observation', type=bool, default=False)
     
     # logging
     parser.add_argument('--logs', type=str, default="./logs")
