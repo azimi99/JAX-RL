@@ -65,8 +65,8 @@ def make_env(args, i):
                 env,
                 logs_folder=f'{args.logs}/{args.env}/{args.seed}/videos'
             )
-            env = NormalizeReward(env)
-            env = NormalizeObservation(env)
+        env = NormalizeReward(env)
+        env = NormalizeObservation(env)
         return env
     return thunk
 
