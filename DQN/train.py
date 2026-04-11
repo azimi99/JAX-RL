@@ -34,15 +34,15 @@ def args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog = "DQN implementation")
     # algorithm
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--time_steps', type=int, default=1000_000)
-    parser.add_argument('--buffer_size', type=int, default=1000_000)
+    parser.add_argument('--time_steps', type=int, default=300_000)
+    parser.add_argument('--buffer_size', type=int, default=200_000)
     parser.add_argument('--num_envs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--tau', type=float, default=0.00)
     parser.add_argument('--epsilon', type=float, default=0.05)
     parser.add_argument('--lr', type=float, default=3e-4)
-    parser.add_argument('--start_learning', type=int, default=10_000)
+    parser.add_argument('--start_learning', type=int, default=1_000)
     
     # neural net
     parser.add_argument('--hidden_dim', type=int, default=256)
@@ -114,6 +114,7 @@ def main() -> None:
     )  
     wandb.init(
         project="rl jax",
+        name=f"{args.env}-{args.seed}",
         config=vars(args),   
     )
     ## setup environment
