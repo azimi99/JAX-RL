@@ -51,6 +51,8 @@ def args_parser() -> argparse.ArgumentParser:
     # environment config
     parser.add_argument('--env', type=str, default="CartPole-v1")
     parser.add_argument('--render_mode', type=str, default="rgb_array")
+    parser.add_argument('--normalize_reward', type=bool, default=False)
+    parser.add_argument('--normalize_observatio', type=bool, default=False)
     
     # logging
     parser.add_argument('--logs', type=str, default="./logs")
@@ -65,8 +67,10 @@ def make_env(args, i):
                 env,
                 logs_folder=f'{args.logs}/{args.env}/{args.seed}/videos'
             )
-        env = NormalizeReward(env)
-        env = NormalizeObservation(env)
+        if args.normalize_reward:
+            env = NormalizeReward(env)
+        if args.normalize_observation:
+            env = NormalizeObservation(env)
         return env
     return thunk
 
