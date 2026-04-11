@@ -1,6 +1,7 @@
 # environment
 import gymnasium as gym
 from gymnasium.vector import SyncVectorEnv
+from gymnasium.wrappers import NormalizeObservation, NormalizeReward
 
 # jax imports
 import numpy as np
@@ -64,6 +65,8 @@ def make_env(args, i):
                 env,
                 logs_folder=f'{args.logs}/{args.env}/{args.seed}/videos'
             )
+            env = NormalizeReward(env)
+            env = NormalizeObservation(env)
         return env
     return thunk
 
