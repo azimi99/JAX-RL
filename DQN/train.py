@@ -18,7 +18,7 @@ import logging
 import os
 
 # algorithm imports
-from utils import wrap_env
+from utils import save_ckpt_and_video
 from dqn.networks.networks import QNetwork
 from dqn.networks.buffer \
     import create_replay_buffer,\
@@ -56,17 +56,14 @@ def args_parser() -> argparse.ArgumentParser:
     
     # logging
     parser.add_argument('--logs', type=str, default="./logs")
+    parser.add_argument('--ckpt_step', type=int, default=10_000)
     
     return parser
 
 def make_env(args, i):
     def thunk():
         env = gym.make(args.env, render_mode=args.render_mode)
-        if i == 0:  # only wrap env 0
-            env = wrap_env(
-                env,
-                logs_folder=f'{args.logs}/{args.env}/{args.seed}/videos'
-            )
+
         if args.normalize_reward:
             env = NormalizeReward(env)
         if args.normalize_observation:
@@ -99,11 +96,9 @@ def sample_action(
 def main() -> None:
     # Setup training 
     args = args_parser().parse_args()
-    os.makedirs(f"{args.logs}/{args.env}/{args.seed}", exist_ok=True)
-    ckpt_dir = ocp.test_utils.erase_and_create_empty(os.path.abspath(f'{args.logs}/{args.env}/{args.seed}/checkpoints'))
-    video_dir = ocp.test_utils.erase_and_create_empty(os.path.abspath(f'{args.logs}/{args.env}/{args.seed}/videos'))
-    checkpointer = ocp.StandardCheckpointer()
-    
+    ckpt_dir = os.path.abspath(f"{args.logs}/{args.env}/{args.seed}")
+    os.makedirs(ckpt_dir, exist_ok=True)
+        
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -116,7 +111,7 @@ def main() -> None:
         project="rl jax",
         name=f"{args.env}-{args.seed}",
         config=vars(args),   
-    )
+    ) 
     ## setup environment
     num_timesteps = args.time_steps
     num_envs = args.num_envs
@@ -195,7 +190,7 @@ def main() -> None:
             done=terminated,
             num_envs=num_envs
         )
-        episode_reward += np.mean(reward)
+        episode_reward += reward
         
         if buffer.size >= batch_size and step >= args.start_learning:
             key = rngs()
@@ -214,29 +209,30 @@ def main() -> None:
                 gamma=args.gamma,
                 tau=args.tau
             )
-            q_params = nnx.state(q_net, nnx.Param)
-            if (step // num_envs) % 1000 == 0:
-                nnx.update(target_q_net, q_params)
-                
-                checkpointer.save(ckpt_dir / f'state-{step}', q_params)
             
-            if step % (args.num_envs * 100) == 0:
+                
+            if step % (args.num_envs * args.ckpt_step) == 0:
+                save_ckpt_and_video(
+                    step=step,
+                    q_net=q_net,
+                    env_id=args.env,
+                    ckpt_root=ckpt_dir
+                )
                 wandb.log({
-                    "train/loss": loss,
-                    "env/episode_reward": episode_reward,
-                    "env_step": step
+                    "train/loss": float(loss),
+                    "env/episode_reward": float(np.mean(episode_reward)),
+                    "env_step": int(step)
                 })
     
         obs = next_obs
-        if done.any():
-            finished = np.where(done)[0]
-            for i in finished:
-                wandb.log({
-                    "env/episode_reward": float(episode_reward[i]),
-                    "env_step": step,
-                })
-                episode_reward[i] = 0.0  # reset only that env’s tracker
-    wandb.log({"videos": wandb.Video(os.path.join(video_dir, sorted(os.listdir(video_dir))[-1]), caption="final_episode")})
+        if done.any(): # reset for vecenv done automatically
+            finished = episode_reward[done]
+            wandb.log({
+                "env/episode_reward": float(finished.mean()),
+                "env_step": step,
+            })
+            episode_reward[done] = 0.0  # reset only that env’s tracker
+
              
     # cleanup
     env.close() 
