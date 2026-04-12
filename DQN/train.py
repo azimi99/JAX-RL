@@ -227,11 +227,6 @@ def main() -> None:
         obs = next_obs
         if done.any(): # reset for vecenv done automatically
             finished = episode_reward[done]
-            wandb.log({
-                "train/loss": float(loss),
-                "env/episode_reward": float(finished.mean()),
-                "env_step": step,
-            })
             episode_reward[done] = 0.0  # reset only that env’s tracker
 
              
