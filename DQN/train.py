@@ -167,7 +167,7 @@ def main() -> None:
     obs, info = env.reset(seed=args.seed)
     done = False
     episode_reward = np.zeros(num_envs, dtype=np.float32)
-    
+    loss:float = 0
     for step in range(0, num_timesteps, num_envs):
         key = rngs()
         action = np.array(sample_action(
