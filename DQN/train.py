@@ -218,15 +218,16 @@ def main() -> None:
                     env_id=args.env,
                     ckpt_root=ckpt_dir
                 )
-                wandb.log({
-                    "train/loss": float(loss),
-                    "env/episode_reward": float(np.mean(episode_reward)),
-                    "env_step": int(step)
-                })
+        
+        # log metrics        
+        wandb.log({
+            "train/loss": float(loss),
+            "env/episode_reward": float(np.mean(episode_reward)),
+            "env_step": int(step)
+        })
     
         obs = next_obs
         if done.any(): # reset for vecenv done automatically
-            finished = episode_reward[done]
             episode_reward[done] = 0.0  # reset only that env’s tracker
 
              
