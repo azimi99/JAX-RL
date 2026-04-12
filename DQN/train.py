@@ -43,6 +43,7 @@ def args_parser() -> argparse.ArgumentParser:
     parser.add_argument('--epsilon', type=float, default=0.05)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--start_learning', type=int, default=1_000)
+    parser.add_argument('--target_update', type=int, default=100)
     
     # neural net
     parser.add_argument('--hidden_dim', type=int, default=256)
@@ -211,10 +212,13 @@ def main() -> None:
             )
             
             q_params = nnx.state(q_net, nnx.Param)
+            
+            if step % (args.num_envs * args.target_update) == 0:
+                nnx.update(target_q_net, q_params)
                 
             if step % (args.num_envs * args.ckpt_step) == 0:
                 
-                nnx.update(target_q_net, q_params)
+                
                 save_ckpt_and_video(
                     step=step,
                     q_net=q_net,
