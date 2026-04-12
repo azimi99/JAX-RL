@@ -228,6 +228,7 @@ def main() -> None:
         if done.any(): # reset for vecenv done automatically
             finished = episode_reward[done]
             wandb.log({
+                "train/loss": float(loss),
                 "env/episode_reward": float(finished.mean()),
                 "env_step": step,
             })
