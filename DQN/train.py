@@ -143,7 +143,7 @@ def main() -> None:
     lr_schedule = optax.linear_schedule(
         init_value=args.lr,
         end_value=1e-4,
-        transition_steps=10000
+        transition_steps=10_000
     )
     tx = optax.chain(
         optax.clip_by_global_norm(10.0),
@@ -210,8 +210,11 @@ def main() -> None:
                 tau=args.tau
             )
             
+            q_params = nnx.state(q_net, nnx.Param)
                 
             if step % (args.num_envs * args.ckpt_step) == 0:
+                
+                nnx.update(target_q_net, q_params)
                 save_ckpt_and_video(
                     step=step,
                     q_net=q_net,
