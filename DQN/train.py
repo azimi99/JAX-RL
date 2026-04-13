@@ -39,7 +39,7 @@ def args_parser() -> argparse.ArgumentParser:
     parser.add_argument('--num_envs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--gamma', type=float, default=0.99)
-    parser.add_argument('--tau', type=float, default=0.00)
+    parser.add_argument('--tau', type=float, default=0.005)
     parser.add_argument('--epsilon', type=float, default=0.05)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--start_learning', type=int, default=1_000)
@@ -212,9 +212,12 @@ def main() -> None:
             )
             
             q_params = nnx.state(q_net, nnx.Param)
+            target_params = nnx.state(target_q_net, nnx.Param)
             
-            if step % (args.num_envs * args.target_update) == 0:
-                nnx.update(target_q_net, q_params)
+            new_target_params = jax.tree.map(
+                lambda t_p, p: args.tau*p + (1 - args.tau)*t_p, target_params, q_params)
+            nnx.update(target_q_net, new_target_params)
+            
                 
             if step % (args.num_envs * args.ckpt_step) == 0:
                 
