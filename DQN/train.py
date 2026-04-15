@@ -221,7 +221,6 @@ def main() -> None:
                 
             if step % (args.num_envs * args.ckpt_step) == 0:
                 
-                
                 save_ckpt_and_video(
                     step=step,
                     q_net=q_net,
